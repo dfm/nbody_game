@@ -1,13 +1,11 @@
+use bevy::ecs::schedule::ReportExecutionOrderAmbiguities;
 use bevy::prelude::*;
 
 mod types;
 use types::{Mass, Radius, Velocity};
 
-mod dynamics;
-use dynamics::DynamicsPlugin;
-
-mod collisions;
-use collisions::CollisionsPlugin;
+mod physics;
+use physics::PhysicsPlugin;
 
 fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
     commands.spawn_bundle(OrthographicCameraBundle::new_2d());
@@ -20,7 +18,7 @@ fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
             ..Default::default()
         })
         .insert(Velocity(Vec2::new(40.0, 0.0)))
-        .insert(Radius(5.0));
+        .insert(Radius(4.0));
 
     commands
         .spawn_bundle(SpriteBundle {
@@ -40,7 +38,7 @@ fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
             sprite: Sprite::new(Vec2::new(10.0, 10.0)),
             ..Default::default()
         })
-        .insert(Radius(5.0))
+        .insert(Radius(6.0))
         .insert(Mass(10.0));
 }
 
@@ -56,7 +54,7 @@ fn main() {
         })
         .add_startup_system(setup.system())
         .add_plugins(DefaultPlugins)
-        .add_plugin(DynamicsPlugin)
-        .add_plugin(CollisionsPlugin)
+        .add_plugin(PhysicsPlugin)
+        .insert_resource(ReportExecutionOrderAmbiguities)
         .run();
 }
