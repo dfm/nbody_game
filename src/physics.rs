@@ -1,13 +1,12 @@
 use bevy::core::FixedTimestep;
 use bevy::prelude::*;
 
-mod simulation;
+use crate::types::{Mass, Position, Radius, Scalar, Vector, Velocity};
 
-use crate::types::{Mass, Radius, Velocity};
-
-const GRAV: f32 = 100_000.0;
-const SOFT: f32 = 10.0;
-const TIMESTEP: f64 = 2.0 / 60.0;
+const GRAV: Scalar = 100_000.0;
+const SOFT: Scalar = 10.0;
+const TIMESTEP: Scalar = 1.0 / 60.0;
+const EPSILON: Scalar = GRAV * TIMESTEP;
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, StageLabel)]
 pub struct PhysicsStage;
@@ -20,6 +19,9 @@ enum PhysicsSteps {
     Collision,
 }
 
+#[derive(Default)]
+pub struct SimulationTime(pub Scalar, pub Scalar);
+
 impl Plugin for PhysicsPlugin {
     fn build(&self, app: &mut AppBuilder) {
         use PhysicsSteps::*;
@@ -31,23 +33,27 @@ impl Plugin for PhysicsPlugin {
                 .with_system(gravity.system().label(PhysicsSteps::Gravity))
                 .with_system(time_step.system().label(TimeStep).after(Gravity))
                 .with_system(collisions.system().label(Collision).after(TimeStep)),
-        );
+        )
+        .add_system(synchronize.system());
+    }
+}
+
+fn synchronize(mut bodies: Query<(&mut Transform, &Position, &Velocity)>) {
+    for (mut transform, position, velocity) in bodies.iter_mut() {
+        let position = position.0.as_f32();
+        transform.translation.x = position.x;
+        transform.translation.y = position.y;
     }
 }
 
 /// The first half of a leapfrog integrator that updates the velocities of all bodies with
 /// `Velocity` based on all bodies with `Mass`.
-fn gravity(
-    time: Res<Time>,
-    sources: Query<(&Mass, &Transform)>,
-    mut bodies: Query<(&Transform, &mut Velocity)>,
-) {
-    let factor = GRAV * time.delta().as_secs_f32();
-    for (transform1, mut velocity) in bodies.iter_mut() {
-        for (mass, transform2) in sources.iter() {
-            let delta = transform1.translation - transform2.translation;
+fn gravity(sources: Query<(&Mass, &Position)>, mut bodies: Query<(&Position, &mut Velocity)>) {
+    for (position1, mut velocity) in bodies.iter_mut() {
+        for (mass, position2) in sources.iter() {
+            let delta = position1.0 - position2.0;
             let r2 = delta.length_squared() + SOFT;
-            let scale = mass.0 * factor / (r2 * r2.sqrt());
+            let scale = mass.0 * EPSILON / (r2 * r2.sqrt());
             velocity.0.x -= delta.x * scale;
             velocity.0.y -= delta.y * scale;
         }
@@ -55,18 +61,21 @@ fn gravity(
 }
 
 /// The second half of the leapfrog step: updating the coordinates of the dynamic bodies.
-fn time_step(time: Res<Time>, mut bodies: Query<(&mut Transform, &Velocity)>) {
-    let dt = time.delta().as_secs_f32();
-    println!("{} {}", dt, TIMESTEP);
-    for (mut transform, velocity) in bodies.iter_mut() {
-        transform.translation.x += dt * velocity.0.x;
-        transform.translation.y += dt * velocity.0.y;
+fn time_step(
+    time: Res<Time>,
+    mut simulation_time: ResMut<SimulationTime>,
+    mut bodies: Query<(&mut Position, &Velocity)>,
+) {
+    for (mut position, velocity) in bodies.iter_mut() {
+        position.0 += TIMESTEP * velocity.0;
     }
+    simulation_time.0 += TIMESTEP;
+    simulation_time.1 += time.delta_seconds_f64();
 }
 
-fn collisions(time: Res<Time>, bodies: Query<(&Radius, &Transform, Option<&Velocity>)>) {
-    let dt = time.delta().as_secs_f32();
-    let zero = Velocity(Vec2::ZERO);
+fn collisions(time: Res<Time>, bodies: Query<(&Radius, &Position, Option<&Velocity>)>) {
+    let dt = time.delta().as_secs_f64();
+    let zero = Velocity(Vector::ZERO);
     for (n, (r1, x1, v1)) in bodies.iter().enumerate() {
         let v1_val = v1.unwrap_or(&zero);
         for (r2, x2, v2) in bodies.iter().skip(n + 1) {
@@ -78,7 +87,7 @@ fn collisions(time: Res<Time>, bodies: Query<(&Radius, &Transform, Option<&Veloc
                     let mut r2 = r1.0 + r2.0;
                     r2 *= r2;
                     let v2_val = v2.unwrap_or(&zero);
-                    let dx = x1.translation - x2.translation;
+                    let dx = x1.0 - x2.0;
                     check_collides(dt, r2, &dx, &v1_val.0, &v2_val.0)
                 }
             };
@@ -90,13 +99,13 @@ fn collisions(time: Res<Time>, bodies: Query<(&Radius, &Transform, Option<&Veloc
 }
 
 #[inline]
-fn distance_squared_at_time(dt: f32, dx: &Vec3, dv: &Vec2) -> f32 {
+fn distance_squared_at_time(dt: Scalar, dx: &Vector, dv: &Vector) -> Scalar {
     let dy = dx.y + dt * dv.y;
     let dx = dx.x + dt * dv.x;
     dx * dx + dy * dy
 }
 
-fn check_collides(dt: f32, r2: f32, dx: &Vec3, v1: &Vec2, v2: &Vec2) -> bool {
+fn check_collides(dt: Scalar, r2: Scalar, dx: &Vector, v1: &Vector, v2: &Vector) -> bool {
     // Check current time
     if dx.length_squared() <= r2 {
         return true;

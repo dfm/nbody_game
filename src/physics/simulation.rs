@@ -4,7 +4,7 @@ type Scalar = f64;
 type Vector = DVec2;
 const GRAV: Scalar = 100_000.0;
 const SOFT: Scalar = 10.0;
-const TIMESTEP: Scalar = 1.0 / 60.0;
+pub const TIMESTEP: Scalar = 1.0 / 60.0;
 const EPSILON: Scalar = GRAV * TIMESTEP;
 
 pub struct StaticBody {
